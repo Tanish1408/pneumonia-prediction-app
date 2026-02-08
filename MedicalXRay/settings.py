@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-k%s!^8^ystneyu$vcmxd2a=4#onf#za6b=_0-4w6*)==+c7#dj
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['pneumonia-prediction-app.onrender.com', 'localhost', '127.0.0.1']
 
 
 # Application definition
