@@ -4,42 +4,35 @@ from django.core.files.storage import FileSystemStorage
 import numpy as np
 from PIL import Image
 import os
+import tensorflow as tf
 
-# --- HELPER FUNCTION TO FIND THE FILE ---
-def find_model_file():
+# Global variable for the Lite Interpreter
+interpreter = None
+
+def load_lite_model():
     """
-    Searches for 'pneumonia_model.h5' in the project directory
-    and subdirectories.
+    Loads the optimized TFLite model from the root or models folder.
     """
-    search_filename = 'pneumonia_model.h5'
+    global interpreter
     
-    # Start searching from the Base Directory
-    start_dir = settings.BASE_DIR
+    # 1. Look for the file in the project root first
+    model_path = os.path.join(settings.BASE_DIR, 'pneumonia_model.tflite')
     
-    print(f"DEBUG: Starting search in: {start_dir}")
-    
-    # Walk through all folders and subfolders
-    for root, dirs, files in os.walk(start_dir):
-        if search_filename in files:
-            found_path = os.path.join(root, search_filename)
-            print(f"DEBUG: FOUND IT! Model is at: {found_path}")
-            return found_path
-            
-    # If not found, try going up one level (just in case)
-    parent_dir = os.path.dirname(start_dir)
-    for root, dirs, files in os.walk(parent_dir):
-        if search_filename in files:
-            found_path = os.path.join(root, search_filename)
-            print(f"DEBUG: FOUND IT (in parent dir)! Model is at: {found_path}")
-            return found_path
+    # 2. If not found, look in the 'models' folder
+    if not os.path.exists(model_path):
+        model_path = os.path.join(settings.BASE_DIR, 'models', 'pneumonia_model.tflite')
 
-    return None
-
-# Global variable
-model = None
+    # 3. Crash if still not found
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Could not find pneumonia_model.tflite! Checked root and 'models/' folder.")
+        
+    # 4. Load the TFLite Interpreter
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    print("DEBUG: TFLite Model Loaded Successfully!")
 
 def home(request):
-    global model
+    global interpreter
     
     result = None
     confidence = None
@@ -53,45 +46,42 @@ def home(request):
         file_path = fs.path(filename)
 
         try:
-            # --- LAZY LOAD MODEL ---
-            if model is None:
-                from tensorflow.keras.models import load_model
-                
-                # Use our finder function
-                model_path = find_model_file()
-                
-                if not model_path:
-                    # If we STILL can't find it, list all files to help debug
-                    print("DEBUG: Listing all files in BASE_DIR to help you find it:")
-                    for root, dirs, files in os.walk(settings.BASE_DIR):
-                        for file in files:
-                            print(os.path.join(root, file))
-                    raise FileNotFoundError("Could not find pneumonia_model.h5 anywhere! Check your terminal logs.")
+            # --- 1. LOAD MODEL (Lazy Loading) ---
+            if interpreter is None:
+                load_lite_model()
 
-                model = load_model(model_path)
-
-            # --- PREPROCESS & PREDICT ---
-            # --- OLD CODE (Delete this) ---
-            # img = Image.open(file_path).convert('L')  <-- 'L' means Grayscale
-            # img_array = img_array.reshape(1, 150, 150, 1)
-
-            # --- NEW CODE (Paste this instead) ---
-            # 1. Convert to RGB (3 channels)
-            img = Image.open(file_path).convert('RGB') 
-            img = img.resize((64, 64))
-            img_array = np.array(img) / 255.0
+            # --- 2. GET MODEL DETAILS ---
+            # This asks the model: "What image size do you want?"
+            input_details = interpreter.get_input_details()
+            output_details = interpreter.get_output_details()
             
-            # 2. Reshape to (1, 64, 64, 3)
-            img_array = img_array.reshape(1, 64, 64, 3)
+            # Extract expected height/width (e.g., 64 or 150)
+            input_shape = input_details[0]['shape'] 
+            target_height = input_shape[1]
+            target_width = input_shape[2]
 
-            prediction = model.predict(img_array)
+            # --- 3. PREPROCESS IMAGE ---
+            img = Image.open(file_path).convert('RGB')
+            img = img.resize((target_width, target_height))
+            img_array = np.array(img, dtype=np.float32) / 255.0
             
-            if prediction[0][0] > 0.5:
+            # Reshape to (1, H, W, 3)
+            img_array = img_array.reshape(1, target_width, target_height, 3)
+
+            # --- 4. PREDICT (TFLite Style) ---
+            interpreter.set_tensor(input_details[0]['index'], img_array)
+            interpreter.invoke()
+            prediction = interpreter.get_tensor(output_details[0]['index'])
+
+            # --- 5. INTERPRET RESULT ---
+            pred_value = prediction[0][0]
+            
+            if pred_value > 0.5:
                 result = "Pneumonia Detected"
-                confidence = round(prediction[0][0] * 100, 2)
+                confidence = round(pred_value * 100, 2)
             else:
                 result = "Normal"
-                confidence = round((1 - prediction[0][0]) * 100, 2)
+                confidence = round((1 - pred_value) * 100, 2)
                 
         except Exception as e:
             print(f"ERROR: {e}")
