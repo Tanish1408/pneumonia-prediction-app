@@ -15,16 +15,15 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
-from django.conf import settings
-from django.conf.urls.static import static
-from diagnosis.views import home  # Import the view we just wrote
+from django.urls import path, include
+from django.conf import settings            # <--- Import settings
+from django.conf.urls.static import static  # <--- Import static helper
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', home, name='home'),      # The empty '' path is the homepage
+    path('', include('diagnosis.urls')),
 ]
 
-# This is CRITICAL for showing images during development
+# This tells Django: "If we are in DEBUG mode, serve images from the MEDIA_ROOT"
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
