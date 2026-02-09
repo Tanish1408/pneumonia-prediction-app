@@ -14,6 +14,7 @@ Beyond the application, this project includes a **Research Module** comparing tw
 
 The final deployed application uses the **Custom CNN** compressed with **TensorFlow Lite**, achieving **98% Recall** while remaining light enough for mobile deployment.
 
+Website: https://pneumonia-prediction-app.onrender.com
 ---
 
 ## 🔬 Research: Custom CNN vs. VGG16
